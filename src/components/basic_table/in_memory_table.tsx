@@ -233,396 +233,444 @@ function getInitialSorting<T>(
 }
 
 export class EuiInMemoryTable<T> extends Component<
-  EuiInMemoryTableProps<T>,
-  State<T>
-> {
-  static defaultProps = {
-    responsive: true,
-    tableLayout: 'fixed',
-  };
-  tableRef: React.RefObject<EuiBasicTable>;
+         EuiInMemoryTableProps<T>,
+         State<T>
+       > {
+         static defaultProps = {
+           responsive: true,
+           tableLayout: 'fixed',
+         };
+         tableRef: React.RefObject<EuiBasicTable>;
 
-  static getDerivedStateFromProps<T>(
-    nextProps: EuiInMemoryTableProps<T>,
-    prevState: State<T>
-  ) {
-    if (nextProps.items !== prevState.prevProps.items) {
-      // We have new items because an external search has completed, so reset pagination state.
-      return {
-        prevProps: {
-          ...prevState.prevProps,
-          items: nextProps.items,
-        },
-        pageIndex: 0,
-      };
-    }
-    const { sortName, sortDirection } = getInitialSorting(
-      nextProps.columns,
-      nextProps.sorting
-    );
-    if (
-      sortName !== prevState.prevProps.sortName ||
-      sortDirection !== prevState.prevProps.sortDirection
-    ) {
-      return {
-        sortName,
-        sortDirection,
-      };
-    }
+         static getDerivedStateFromProps<T>(
+           nextProps: EuiInMemoryTableProps<T>,
+           prevState: State<T>
+         ) {
+           let updatedPrevState = prevState;
+           if (nextProps.items !== prevState.prevProps.items) {
+             // We have new items because an external search has completed, so reset pagination state.
+             updatedPrevState = {
+               ...updatedPrevState,
+               prevProps: {
+                 ...prevState.prevProps,
+                 items: nextProps.items,
+               },
+               pageIndex: 0,
+             };
+           }
+           const { sortName, sortDirection } = getInitialSorting(
+             nextProps.columns,
+             nextProps.sorting
+           );
+           if (
+             sortName !== prevState.prevProps.sortName ||
+             sortDirection !== prevState.prevProps.sortDirection
+           ) {
+             updatedPrevState =  {
+               ...updatedPrevState,
+               sortName,
+               sortDirection,
+             };
+           }
 
-    const nextQuery = nextProps.search
-      ? (nextProps.search as EuiSearchBarProps).query
-      : '';
-    const prevQuery = prevState.prevProps.search
-      ? (prevState.prevProps.search as EuiSearchBarProps).query
-      : '';
+           const nextQuery = nextProps.search
+             ? (nextProps.search as EuiSearchBarProps).query
+             : '';
+           const prevQuery = prevState.prevProps.search
+             ? (prevState.prevProps.search as EuiSearchBarProps).query
+             : '';
 
-    if (nextQuery !== prevQuery) {
-      return {
-        prevProps: {
-          ...prevState.prevProps,
-          search: nextProps.search,
-        },
-        query: getQueryFromSearch(nextProps.search, false),
-      };
-    }
+           if (nextQuery !== prevQuery) {
+             updatedPrevState = {
+               ...updatedPrevState,
+               prevProps: {
+                 ...prevState.prevProps,
+                 search: nextProps.search,
+               },
+               query: getQueryFromSearch(nextProps.search, false),
+             };
+           }
+           if (updatedPrevState !== prevState) {
+             return updatedPrevState;
+           }
+           return null;
+         }
 
-    return null;
-  }
+         constructor(props: EuiInMemoryTableProps<T>) {
+           super(props);
 
-  constructor(props: EuiInMemoryTableProps<T>) {
-    super(props);
+           const {
+             columns,
+             search,
+             pagination,
+             sorting,
+             allowNeutralSort,
+           } = props;
+           const {
+             pageIndex,
+             pageSize,
+             pageSizeOptions,
+             hidePerPageOptions,
+           } = getInitialPagination(pagination);
+           const { sortName, sortDirection } = getInitialSorting(
+             columns,
+             sorting
+           );
 
-    const { columns, search, pagination, sorting, allowNeutralSort } = props;
-    const {
-      pageIndex,
-      pageSize,
-      pageSizeOptions,
-      hidePerPageOptions,
-    } = getInitialPagination(pagination);
-    const { sortName, sortDirection } = getInitialSorting(columns, sorting);
+           this.state = {
+             prevProps: {
+               items: props.items,
+               sortName,
+               sortDirection,
+               search,
+             },
+             search: search,
+             query: getQueryFromSearch(search, true),
+             pageIndex: pageIndex || 0,
+             pageSize,
+             pageSizeOptions,
+             sortName,
+             sortDirection,
+             allowNeutralSort: allowNeutralSort !== false,
+             hidePerPageOptions,
+           };
 
-    this.state = {
-      prevProps: {
-        items: props.items,
-        sortName,
-        sortDirection,
-        search,
-      },
-      search: search,
-      query: getQueryFromSearch(search, true),
-      pageIndex: pageIndex || 0,
-      pageSize,
-      pageSizeOptions,
-      sortName,
-      sortDirection,
-      allowNeutralSort: allowNeutralSort !== false,
-      hidePerPageOptions,
-    };
+           this.tableRef = React.createRef<EuiBasicTable>();
+         }
 
-    this.tableRef = React.createRef<EuiBasicTable>();
-  }
+         setSelection(newSelection: T[]) {
+           if (this.tableRef.current) {
+             this.tableRef.current.setSelection(newSelection);
+           }
+         }
 
-  setSelection(newSelection: T[]) {
-    if (this.tableRef.current) {
-      this.tableRef.current.setSelection(newSelection);
-    }
-  }
+         onTableChange = ({ page, sort }: Criteria<T>) => {
+           const { index: pageIndex, size: pageSize } = (page || {}) as {
+             index: number;
+             size: number;
+           };
 
-  onTableChange = ({ page, sort }: Criteria<T>) => {
-    const { index: pageIndex, size: pageSize } = (page || {}) as {
-      index: number;
-      size: number;
-    };
+           let { field: sortName, direction: sortDirection } = (sort ||
+             {}) as {
+             field: keyof T;
+             direction: Direction;
+           };
 
-    let { field: sortName, direction: sortDirection } = (sort || {}) as {
-      field: keyof T;
-      direction: Direction;
-    };
+           // To keep backwards compatibility reportedSortName needs to be tracked separately
+           // from sortName; sortName gets stored internally while reportedSortName is sent to the callback
+           let reportedSortName = sortName;
 
-    // To keep backwards compatibility reportedSortName needs to be tracked separately
-    // from sortName; sortName gets stored internally while reportedSortName is sent to the callback
-    let reportedSortName = sortName;
+           // EuiBasicTable returns the column's `field` if it exists instead of `name`,
+           // map back to `name` if this is the case
+           for (let i = 0; i < this.props.columns.length; i++) {
+             const column = this.props.columns[i];
+             if (
+               (column as EuiTableFieldDataColumnType<T>).field ===
+               sortName
+             ) {
+               sortName = column.name as keyof T;
+               break;
+             }
+           }
 
-    // EuiBasicTable returns the column's `field` if it exists instead of `name`,
-    // map back to `name` if this is the case
-    for (let i = 0; i < this.props.columns.length; i++) {
-      const column = this.props.columns[i];
-      if ((column as EuiTableFieldDataColumnType<T>).field === sortName) {
-        sortName = column.name as keyof T;
-        break;
-      }
-    }
+           // Allow going back to 'neutral' sorting
+           if (
+             this.state.allowNeutralSort &&
+             this.state.sortName === sortName &&
+             this.state.sortDirection === 'desc' &&
+             sortDirection === 'asc'
+           ) {
+             sortName = '' as keyof T;
+             reportedSortName = '' as keyof T;
+             sortDirection = 'asc'; // Default sort direction.
+           }
 
-    // Allow going back to 'neutral' sorting
-    if (
-      this.state.allowNeutralSort &&
-      this.state.sortName === sortName &&
-      this.state.sortDirection === 'desc' &&
-      sortDirection === 'asc'
-    ) {
-      sortName = '' as keyof T;
-      reportedSortName = '' as keyof T;
-      sortDirection = 'asc'; // Default sort direction.
-    }
+           if (this.props.onTableChange) {
+             this.props.onTableChange({
+               // @ts-ignore complex relationship between pagination's existance and criteria, the code logic ensures this is correctly maintained
+               page,
+               sort: {
+                 field: reportedSortName,
+                 direction: sortDirection,
+               },
+             });
+           }
 
-    if (this.props.onTableChange) {
-      this.props.onTableChange({
-        // @ts-ignore complex relationship between pagination's existance and criteria, the code logic ensures this is correctly maintained
-        page,
-        sort: {
-          field: reportedSortName,
-          direction: sortDirection,
-        },
-      });
-    }
+           this.setState({
+             pageIndex,
+             pageSize,
+             sortName,
+             sortDirection,
+           });
+         };
 
-    this.setState({
-      pageIndex,
-      pageSize,
-      sortName,
-      sortDirection,
-    });
-  };
+         onQueryChange = ({
+           query,
+           queryText,
+           error,
+         }: onChangeArgument) => {
+           const { search } = this.props;
+           if (isEuiSearchBarProps(search)) {
+             if (search.onChange) {
+               const shouldQueryInMemory =
+                 error == null
+                   ? search.onChange({
+                       query: query!,
+                       queryText,
+                       error: null,
+                     })
+                   : search.onChange({
+                       query: null,
+                       queryText,
+                       error,
+                     });
+               if (!shouldQueryInMemory) {
+                 return;
+               }
+             }
+           }
 
-  onQueryChange = ({ query, queryText, error }: onChangeArgument) => {
-    const { search } = this.props;
-    if (isEuiSearchBarProps(search)) {
-      if (search.onChange) {
-        const shouldQueryInMemory =
-          error == null
-            ? search.onChange({
-                query: query!,
-                queryText,
-                error: null,
-              })
-            : search.onChange({
-                query: null,
-                queryText,
-                error,
-              });
-        if (!shouldQueryInMemory) {
-          return;
-        }
-      }
-    }
+           // Reset pagination state.
+           this.setState(state => ({
+             prevProps: {
+               ...state.prevProps,
+               search,
+             },
+             query,
+             pageIndex: 0,
+           }));
+         };
 
-    // Reset pagination state.
-    this.setState(state => ({
-      prevProps: {
-        ...state.prevProps,
-        search,
-      },
-      query,
-      pageIndex: 0,
-    }));
-  };
+         renderSearchBar() {
+           const { search } = this.props;
+           if (search) {
+             let searchBarProps: Omit<
+               EuiSearchBarProps,
+               'onChange'
+             > = {};
 
-  renderSearchBar() {
-    const { search } = this.props;
-    if (search) {
-      let searchBarProps: Omit<EuiSearchBarProps, 'onChange'> = {};
+             if (isEuiSearchBarProps(search)) {
+               const { onChange, ..._searchBarProps } = search;
+               searchBarProps = _searchBarProps;
 
-      if (isEuiSearchBarProps(search)) {
-        const { onChange, ..._searchBarProps } = search;
-        searchBarProps = _searchBarProps;
+               if (
+                 searchBarProps.box &&
+                 searchBarProps.box.schema === true
+               ) {
+                 searchBarProps.box = {
+                   ...searchBarProps.box,
+                   schema: this.resolveSearchSchema(),
+                 };
+               }
+             }
 
-        if (searchBarProps.box && searchBarProps.box.schema === true) {
-          searchBarProps.box = {
-            ...searchBarProps.box,
-            schema: this.resolveSearchSchema(),
-          };
-        }
-      }
+             return (
+               <EuiSearchBar
+                 onChange={this.onQueryChange}
+                 {...searchBarProps}
+               />
+             );
+           }
+         }
 
-      return <EuiSearchBar onChange={this.onQueryChange} {...searchBarProps} />;
-    }
-  }
+         resolveSearchSchema(): SchemaType {
+           const { columns } = this.props;
+           return columns.reduce<{
+             strict: boolean;
+             fields: Record<string, { type: EuiTableDataType }>;
+           }>(
+             (schema, column) => {
+               const {
+                 field,
+                 dataType,
+               } = column as EuiTableFieldDataColumnType<T>;
+               if (field) {
+                 const type = dataType || 'string';
+                 schema.fields[field as string] = { type };
+               }
+               return schema;
+             },
+             { strict: true, fields: {} }
+           );
+         }
 
-  resolveSearchSchema(): SchemaType {
-    const { columns } = this.props;
-    return columns.reduce<{
-      strict: boolean;
-      fields: Record<string, { type: EuiTableDataType }>;
-    }>(
-      (schema, column) => {
-        const { field, dataType } = column as EuiTableFieldDataColumnType<T>;
-        if (field) {
-          const type = dataType || 'string';
-          schema.fields[field as string] = { type };
-        }
-        return schema;
-      },
-      { strict: true, fields: {} }
-    );
-  }
+         getItemSorter(): (a: T, b: T) => number {
+           const { sortName, sortDirection } = this.state;
 
-  getItemSorter(): (a: T, b: T) => number {
-    const { sortName, sortDirection } = this.state;
+           const { columns } = this.props;
 
-    const { columns } = this.props;
+           const sortColumn = columns.find(
+             ({ name }) => name === sortName
+           ) as EuiTableFieldDataColumnType<T>;
 
-    const sortColumn = columns.find(
-      ({ name }) => name === sortName
-    ) as EuiTableFieldDataColumnType<T>;
+           if (sortColumn == null) {
+             // can't return a non-function so return a function that says everything is the same
+             return () => 0;
+           }
 
-    if (sortColumn == null) {
-      // can't return a non-function so return a function that says everything is the same
-      return () => 0;
-    }
+           const sortable = sortColumn.sortable;
 
-    const sortable = sortColumn.sortable;
+           if (typeof sortable === 'function') {
+             return Comparators.value(
+               sortable,
+               Comparators.default(sortDirection)
+             );
+           }
 
-    if (typeof sortable === 'function') {
-      return Comparators.value(sortable, Comparators.default(sortDirection));
-    }
+           return Comparators.property(
+             sortColumn.field as string,
+             Comparators.default(sortDirection)
+           );
+         }
 
-    return Comparators.property(
-      sortColumn.field as string,
-      Comparators.default(sortDirection)
-    );
-  }
+         getItems() {
+           const { executeQueryOptions } = this.props;
+           const {
+             prevProps: { items },
+           } = this.state;
 
-  getItems() {
-    const { executeQueryOptions } = this.props;
-    const {
-      prevProps: { items },
-    } = this.state;
+           if (!items.length) {
+             return {
+               items: [],
+               totalItemCount: 0,
+             };
+           }
 
-    if (!items.length) {
-      return {
-        items: [],
-        totalItemCount: 0,
-      };
-    }
+           const { query, sortName, pageIndex, pageSize } = this.state;
 
-    const { query, sortName, pageIndex, pageSize } = this.state;
+           const matchingItems = query
+             ? EuiSearchBar.Query.execute(
+                 query,
+                 items,
+                 executeQueryOptions
+               )
+             : items;
 
-    const matchingItems = query
-      ? EuiSearchBar.Query.execute(query, items, executeQueryOptions)
-      : items;
+           const sortedItems = sortName
+             ? matchingItems
+                 .slice(0) // avoid mutating the source array
+                 .sort(this.getItemSorter()) // sort, causes mutation
+             : matchingItems;
 
-    const sortedItems = sortName
-      ? matchingItems
-          .slice(0) // avoid mutating the source array
-          .sort(this.getItemSorter()) // sort, causes mutation
-      : matchingItems;
+           const visibleItems = pageSize
+             ? (() => {
+                 const startIndex = pageIndex * pageSize;
+                 return sortedItems.slice(
+                   startIndex,
+                   Math.min(startIndex + pageSize, sortedItems.length)
+                 );
+               })()
+             : sortedItems;
 
-    const visibleItems = pageSize
-      ? (() => {
-          const startIndex = pageIndex * pageSize;
-          return sortedItems.slice(
-            startIndex,
-            Math.min(startIndex + pageSize, sortedItems.length)
-          );
-        })()
-      : sortedItems;
+           return {
+             items: visibleItems,
+             totalItemCount: matchingItems.length,
+           };
+         }
 
-    return {
-      items: visibleItems,
-      totalItemCount: matchingItems.length,
-    };
-  }
+         render() {
+           const {
+             columns,
+             loading,
+             message,
+             error,
+             selection,
+             isSelectable,
+             hasActions,
+             compressed,
+             pagination: hasPagination,
+             sorting: hasSorting,
+             itemIdToExpandedRowMap,
+             itemId,
+             rowProps,
+             cellProps,
+             tableLayout,
+             items: _unuseditems,
+             search,
+             onTableChange,
+             executeQueryOptions,
+             allowNeutralSort,
+             ...rest
+           } = this.props;
 
-  render() {
-    const {
-      columns,
-      loading,
-      message,
-      error,
-      selection,
-      isSelectable,
-      hasActions,
-      compressed,
-      pagination: hasPagination,
-      sorting: hasSorting,
-      itemIdToExpandedRowMap,
-      itemId,
-      rowProps,
-      cellProps,
-      tableLayout,
-      items: _unuseditems,
-      search,
-      onTableChange,
-      executeQueryOptions,
-      allowNeutralSort,
-      ...rest
-    } = this.props;
+           const {
+             pageIndex,
+             pageSize,
+             pageSizeOptions,
+             sortName,
+             sortDirection,
+             hidePerPageOptions,
+           } = this.state;
 
-    const {
-      pageIndex,
-      pageSize,
-      pageSizeOptions,
-      sortName,
-      sortDirection,
-      hidePerPageOptions,
-    } = this.state;
+           const { items, totalItemCount } = this.getItems();
 
-    const { items, totalItemCount } = this.getItems();
+           const pagination:
+             | PaginationBarType
+             | undefined = !hasPagination
+             ? undefined
+             : {
+                 pageIndex,
+                 pageSize: pageSize || 1,
+                 pageSizeOptions,
+                 totalItemCount,
+                 hidePerPageOptions,
+               };
 
-    const pagination: PaginationBarType | undefined = !hasPagination
-      ? undefined
-      : {
-          pageIndex,
-          pageSize: pageSize || 1,
-          pageSizeOptions,
-          totalItemCount,
-          hidePerPageOptions,
-        };
+           // Data loaded from a server can have a default sort order which is meaningful to the
+           // user, but can't be reproduced with client-side sort logic. So we allow the table to display
+           // rows in the order in which they're initially loaded by providing an undefined sorting prop.
+           const sorting:
+             | EuiTableSortingType<T>
+             | undefined = !hasSorting
+             ? undefined
+             : {
+                 sort:
+                   !sortName && !sortDirection
+                     ? undefined
+                     : {
+                         field: sortName as keyof T,
+                         direction: sortDirection as Direction,
+                       },
+                 allowNeutralSort: this.state.allowNeutralSort,
+               };
 
-    // Data loaded from a server can have a default sort order which is meaningful to the
-    // user, but can't be reproduced with client-side sort logic. So we allow the table to display
-    // rows in the order in which they're initially loaded by providing an undefined sorting prop.
-    const sorting: EuiTableSortingType<T> | undefined = !hasSorting
-      ? undefined
-      : {
-          sort:
-            !sortName && !sortDirection
-              ? undefined
-              : {
-                  field: sortName as keyof T,
-                  direction: sortDirection as Direction,
-                },
-          allowNeutralSort: this.state.allowNeutralSort,
-        };
+           const searchBar = this.renderSearchBar();
 
-    const searchBar = this.renderSearchBar();
+           const table = (
+             // @ts-ignore complex relationship between pagination's existance and criteria, the code logic ensures this is correctly maintained
+             <EuiBasicTable
+               ref={this.tableRef}
+               items={items}
+               itemId={itemId}
+               rowProps={rowProps}
+               cellProps={cellProps}
+               columns={columns}
+               pagination={pagination}
+               sorting={sorting}
+               selection={selection}
+               isSelectable={isSelectable}
+               hasActions={hasActions}
+               onChange={this.onTableChange}
+               error={error}
+               loading={loading}
+               noItemsMessage={message}
+               tableLayout={tableLayout}
+               compressed={compressed}
+               itemIdToExpandedRowMap={itemIdToExpandedRowMap}
+               {...rest}
+             />
+           );
 
-    const table = (
-      // @ts-ignore complex relationship between pagination's existance and criteria, the code logic ensures this is correctly maintained
-      <EuiBasicTable
-        ref={this.tableRef}
-        items={items}
-        itemId={itemId}
-        rowProps={rowProps}
-        cellProps={cellProps}
-        columns={columns}
-        pagination={pagination}
-        sorting={sorting}
-        selection={selection}
-        isSelectable={isSelectable}
-        hasActions={hasActions}
-        onChange={this.onTableChange}
-        error={error}
-        loading={loading}
-        noItemsMessage={message}
-        tableLayout={tableLayout}
-        compressed={compressed}
-        itemIdToExpandedRowMap={itemIdToExpandedRowMap}
-        {...rest}
-      />
-    );
+           if (!searchBar) {
+             return table;
+           }
 
-    if (!searchBar) {
-      return table;
-    }
-
-    return (
-      <div>
-        {searchBar}
-        <EuiSpacer size="l" />
-        {table}
-      </div>
-    );
-  }
-}
+           return (
+             <div>
+               {searchBar}
+               <EuiSpacer size="l" />
+               {table}
+             </div>
+           );
+         }
+       }
