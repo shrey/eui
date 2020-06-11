@@ -2,6 +2,7 @@
 
 - Added conditional rendering of the title element in `EuiCallOut` to avoid usage of additional space caused by the rendered `<div>` element ([#3549](https://github.com/elastic/eui/pull/3549))
 - Added `invalidCallout` prop to `EuiForm` to allow conditional rendering of error callout([#3585](https://github.com/elastic/eui/pull/3585))
+- Added `side` property to `EuiGlobalToastList` component to allow user to change side of the toasts. ([]())
 
 **Bug fixes**
 
