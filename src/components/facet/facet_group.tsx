@@ -50,7 +50,7 @@ export const EuiFacetGroup: FunctionComponent<EuiFacetGroupProps> = ({
   children,
   className,
   layout = 'vertical',
-  gutterSize = "l",
+  gutterSize = "m",
   ...rest
 }) => {
   const classes = classNames(
