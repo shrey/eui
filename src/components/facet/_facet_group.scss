@@ -1,9 +1,41 @@
 .euiFacetGroup--horizontal {
   .euiFacetButton {
     height: $euiButtonHeightSmall;
-
-    &:not(:last-of-type) {
-      margin-right: $euiSizeL;
+  }
+  $gutterTypes: (
+    gutterExtraSmall: $euiSizeXS,
+    gutterSmall: $euiSizeS,
+    gutterMedium: $euiSize,
+    gutterLarge: $euiSizeL,
+    gutterExtraLarge: $euiSizeXXL,
+  );
+  @each $gutterName, $gutterSize in $gutterTypes {
+      .euiFacetGroup--#{$gutterName} {
+        .euiFacetButton{
+          &:not(:last-of-type) {
+            margin-right: -$gutterSize;
+          }
+          margin-bottom: -$gutterSize;
+        }
+      }
     }
+}
+
+
+
+// Gutter Sizes
+// @each $gutterName, $gutterSize in $gutterTypes {
+//   $halfGutterSize: $gutterSize * .5;
+
+//   .euiFacetGroup--#{$gutterName} {
+//     .euiFacetButton{
+//       margin: -$halfGutterSize;
+//     }
+
+//   }
+// }
+.euiFacetGroup--vertical {
+  .euiFacetButton {
+    margin-bottom: 20px;
   }
 }
